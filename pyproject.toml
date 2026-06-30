@@ -1,0 +1,39 @@
+[project]
+name = "forge"
+version = "0.1.0"
+description = "GPT-2 kernel fusion with Triton: a FlashAttention-style fused causal attention kernel, benchmarked and profiled on an NVIDIA A100."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Jahnavi Yelamanchi" }]
+
+# NOTE: torch + triton are GPU-side deps installed inside the Modal image
+# (see modal_app.py). They are listed here for documentation / local type
+# hints, but the kernels only ever execute on the Modal A100.
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "matplotlib>=3.8",
+    "modal>=0.64",
+]
+
+[project.optional-dependencies]
+gpu = [
+    "torch>=2.3",
+    "triton>=2.3",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["forge*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

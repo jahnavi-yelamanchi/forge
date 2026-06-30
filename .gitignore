@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.ruff_cache/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+
+# Modal
+.modal/
+.modal.toml
+
+# Profiling artifacts
+*.ncu-rep
+*.qdrep
+*.nsys-rep
+*.sqlite
+profiling/traces/
+
+# Triton / torch caches
+.triton/
+*.json.lock
