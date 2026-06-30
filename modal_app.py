@@ -29,6 +29,7 @@ image = (
     )
     # Mount the project source so remote code == local code.
     .add_local_python_source("forge")
+    .add_local_dir("tests", remote_path="/root/tests")
 )
 
 app = modal.App("forge", image=image)
@@ -65,6 +66,19 @@ def smoke() -> dict:
     for k, v in info.items():
         print(f"  {k:18s}: {v}")
     return info
+
+
+@app.function(gpu=GPU)
+def run_tests() -> int:
+    """Run the correctness suite on the A100. Returns pytest's exit code."""
+    import sys
+
+    import pytest
+
+    code = pytest.main(["-q", "/root/tests"])
+    print(f"\npytest exit code: {int(code)}")
+    sys.stdout.flush()
+    return int(code)
 
 
 @app.local_entrypoint()
