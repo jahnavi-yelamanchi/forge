@@ -51,8 +51,8 @@ _Populated as the project progresses (see `docs/benchmarks.md`)._
 ## Roadmap
 
 - [x] Repo + Modal A100 infrastructure
-- [ ] PyTorch attention baselines + correctness harness
-- [ ] Fused FlashAttention **forward** kernel in Triton
+- [x] PyTorch attention baselines + correctness harness
+- [x] Fused FlashAttention **forward** kernel in Triton — _17/17 tests vs SDPA (fp16+bf16, N≤2048)_
 - [ ] Benchmark sweep + speedup/bandwidth results
 - [ ] Profiling + tuning loop (block sizes, pipelining, SRAM reuse)
 - [ ] End-to-end GPT-2 integration

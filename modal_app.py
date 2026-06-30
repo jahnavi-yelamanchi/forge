@@ -70,13 +70,24 @@ def smoke() -> dict:
 
 @app.function(gpu=GPU)
 def run_tests() -> int:
-    """Run the correctness suite on the A100. Returns pytest's exit code."""
+    """Run the correctness suite on the A100. Returns pytest's exit code.
+
+    pytest output is captured and re-emitted with a ``PYTEST|`` prefix so the
+    summary survives Modal's progress spinner overwriting terminal lines.
+    """
+    import contextlib
+    import io
     import sys
 
     import pytest
 
-    code = pytest.main(["-q", "/root/tests"])
-    print(f"\npytest exit code: {int(code)}")
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf), contextlib.redirect_stderr(buf):
+        code = pytest.main(["-q", "/root/tests"])
+
+    for line in buf.getvalue().splitlines():
+        print(f"PYTEST| {line}")
+    print(f"PYTEST| exit code: {int(code)}")
     sys.stdout.flush()
     return int(code)
 

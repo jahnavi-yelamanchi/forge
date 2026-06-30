@@ -15,6 +15,7 @@ import itertools
 import pytest
 import torch
 
+from forge.flash_attn import flash_attention
 from forge.reference import make_qkv, naive_attention, sdpa_attention
 from forge.utils import compare
 
@@ -31,6 +32,7 @@ DTYPES = [torch.float16, torch.bfloat16]
 # here in Phase 2 and inherits this whole test matrix.
 IMPLS = {
     "naive": naive_attention,
+    "fused": flash_attention,
 }
 
 # fp16/bf16 attention accumulates a lot of terms; these tolerances track what
@@ -56,3 +58,24 @@ def test_matches_sdpa(shape, dtype, impl_name):
         f"{impl_name} {shape} {dtype}: max_abs={res.max_abs_err:.4g} "
         f"max_rel={res.max_rel_err:.4g}"
     )
+
+
+def test_fused_backward_wires_up():
+    """The autograd seam must produce finite dQ/dK/dV of the right shape.
+
+    Backward currently defers to PyTorch (Phase 2), so this guards the wiring,
+    not the math — a fused backward kernel will harden it later.
+    """
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required")
+
+    q, k, v = make_qkv(2, 4, 256, 64, dtype=torch.float16)
+    q, k, v = (t.clone().requires_grad_(True) for t in (q, k, v))
+
+    out = flash_attention(q, k, v, causal=True)
+    out.sum().backward()
+
+    for name, t in (("dQ", q.grad), ("dK", k.grad), ("dV", v.grad)):
+        assert t is not None, f"{name} is None"
+        assert t.shape == q.shape, f"{name} wrong shape"
+        assert torch.isfinite(t).all(), f"{name} has non-finite values"
