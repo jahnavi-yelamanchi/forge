@@ -102,3 +102,25 @@ def test_gpt2_fused_matches_sdpa():
 
     res = compare(out, ref, atol=3e-2, rtol=3e-2)
     assert res.passed, f"GPT-2 logits diverge: max_abs={res.max_abs_err:.4g}"
+
+
+@pytest.mark.parametrize("tokens", [1024, 4096])
+def test_fused_linear_gelu_matches_torch(tokens):
+    """Fused linear+GELU must match F.gelu(F.linear(x), 'tanh')."""
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required")
+
+    import torch.nn as nn
+    import torch.nn.functional as F
+
+    from forge.mlp import fused_linear_gelu
+
+    K = 768
+    x = torch.randn(tokens, K, device="cuda", dtype=torch.float16)
+    lin = nn.Linear(K, 4 * K).cuda().half()
+
+    ref = F.gelu(lin(x), approximate="tanh")
+    out = fused_linear_gelu(x, lin.weight, lin.bias)
+
+    res = compare(out, ref, atol=2e-2, rtol=2e-2)
+    assert res.passed, f"fused MLP {tokens}: max_abs={res.max_abs_err:.4g}"

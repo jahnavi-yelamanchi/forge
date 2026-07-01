@@ -77,22 +77,24 @@ modal run modal_app.py               # smoke test: confirm A100 + torch + triton
 modal run modal_app.py::run_tests    # correctness: fused vs PyTorch SDPA (18 tests)
 modal run modal_app.py::bench        # benchmark sweep -> results.csv + plots
 modal run modal_app.py::profile      # 36-config autotune + torch.profiler
-modal run modal_app.py::e2e          # end-to-end GPT-2 forward across backends
+modal run modal_app.py::e2e          # end-to-end GPT-2 fwd + training step
+modal run modal_app.py::mlp          # fused linear+GELU FFN micro-benchmark
 ```
 
 ## Repo layout
 
 | Path | What |
 |------|------|
-| `forge/flash_attn.py` | Triton fused forward kernel + `autograd.Function` wrapper |
+| `forge/flash_attn.py` | Triton fused forward **and backward** kernels + autograd wrapper |
+| `forge/mlp.py`        | Fused linear+GELU FFN kernel (GEMM + activation epilogue) |
 | `forge/reference.py`  | PyTorch attention baselines (naive + SDPA) |
-| `forge/gpt2.py`       | Minimal GPT-2 with swappable attention backend |
+| `forge/gpt2.py`       | Minimal GPT-2 with swappable attention + MLP backend |
 | `forge/utils.py`      | Timing, FLOP/bandwidth accounting, tolerances |
 | `modal_app.py`        | Modal A100 image + remote entrypoints |
 | `benchmarks/`         | Sweep + end-to-end harness + plotting |
 | `profiling/`          | Autotune grid + `torch.profiler` driver |
 | `tests/`              | Correctness suite (fused vs SDPA, fp16+bf16) |
-| `docs/`               | [Design math](docs/design.md) · [benchmarks](docs/benchmarks.md) · [profiling](docs/profiling.md) |
+| `docs/`               | [design](docs/design.md) · [benchmarks](docs/benchmarks.md) · [profiling](docs/profiling.md) · [MLP fusion](docs/mlp-fusion.md) |
 
 ## Notes & caveats
 
@@ -114,8 +116,8 @@ modal run modal_app.py::e2e          # end-to-end GPT-2 forward across backends
 - [x] Benchmark sweep + speedup/bandwidth results — _up to 18.9× vs naive, ~33× less HBM traffic_
 - [x] Profiling + tuning loop (pipeline depth + two-phase causal) — _gap to SDPA 1.5×→1.3×_
 - [x] End-to-end GPT-2 integration — _1.83× forward speedup, logits match SDPA to 2.9e-3_
-- [x] Fused **backward** kernel — _grads match SDPA, 1.61× training-step speedup (20/20 tests)_
-- [ ] _Future:_ MLP/GELU fusion
+- [x] Fused **backward** kernel — _grads match SDPA, 1.61× training-step speedup_
+- [x] MLP / GELU **epilogue fusion** — _correct; ~0.7× vs cuBLAS (compute-bound; [why](docs/mlp-fusion.md))_
 
 ## License
 

@@ -141,6 +141,28 @@ def plot_e2e(json_path: str, out_dir: Path) -> None:
     _save(fig, out_dir, "e2e_forward.png")
 
 
+def plot_mlp(json_path: str, out_dir: Path) -> None:
+    """Grouped bars: fused vs torch linear+GELU latency across token counts."""
+    import json
+
+    rows = json.loads(Path(json_path).read_text())
+    toks = [r["tokens"] for r in rows]
+    x = range(len(toks))
+    fig, ax = plt.subplots(figsize=(6.5, 4))
+    ax.bar([i - 0.2 for i in x], [r["torch_ms"] for r in rows], 0.4,
+           color=COLORS["sdpa"], label="torch (cuBLAS + GELU)")
+    ax.bar([i + 0.2 for i in x], [r["fused_ms"] for r in rows], 0.4,
+           color=COLORS["fused"], label="Forge (fused epilogue)")
+    for i, r in enumerate(rows):
+        ax.text(i + 0.2, r["fused_ms"], f"{r['speedup']:.2f}×", ha="center", va="bottom", fontsize=9)
+    ax.set(xlabel="Tokens (batch × seqlen)", ylabel="Latency (ms)",
+           title="FFN linear+GELU: fused epilogue vs cuBLAS (d=768→3072, fp16)")
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(toks)
+    ax.legend()
+    _save(fig, out_dir, "mlp_fused.png")
+
+
 def main(csv_path: str, out_dir: str) -> None:
     df = pd.read_csv(csv_path)
     out = Path(out_dir)

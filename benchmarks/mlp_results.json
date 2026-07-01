@@ -1,0 +1,30 @@
+[
+  {
+    "tokens": 1024,
+    "torch_ms": 0.0799,
+    "fused_ms": 0.1526,
+    "speedup": 0.523,
+    "intermediate_traffic_saved_gb": 0.0126
+  },
+  {
+    "tokens": 4096,
+    "torch_ms": 0.2012,
+    "fused_ms": 0.3103,
+    "speedup": 0.649,
+    "intermediate_traffic_saved_gb": 0.0503
+  },
+  {
+    "tokens": 8192,
+    "torch_ms": 0.3374,
+    "fused_ms": 0.4977,
+    "speedup": 0.678,
+    "intermediate_traffic_saved_gb": 0.1007
+  },
+  {
+    "tokens": 16384,
+    "torch_ms": 0.6083,
+    "fused_ms": 0.8776,
+    "speedup": 0.693,
+    "intermediate_traffic_saved_gb": 0.2013
+  }
+]

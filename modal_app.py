@@ -149,6 +149,30 @@ def profile():
 
 
 @app.function(gpu=GPU)
+def run_mlp() -> list[dict]:
+    """Micro-benchmark the fused linear+GELU FFN kernel on the A100."""
+    from benchmarks.run_mlp import run_mlp_bench
+
+    print("=== Forge fused linear+GELU benchmark ===")
+    return run_mlp_bench()
+
+
+@app.local_entrypoint()
+def mlp():
+    """`modal run modal_app.py::mlp` -> fused FFN benchmark + plot."""
+    import json
+    from pathlib import Path
+
+    rows = run_mlp.remote()
+    Path("benchmarks/mlp_results.json").write_text(json.dumps(rows, indent=2))
+    print(json.dumps(rows, indent=2))
+
+    from benchmarks.plot import plot_mlp
+
+    plot_mlp("benchmarks/mlp_results.json", Path("docs/assets"))
+
+
+@app.function(gpu=GPU)
 def run_e2e(batch: int = 8, seqlen: int = 1024) -> dict:
     """End-to-end GPT-2 forward across attention backends, on the A100."""
     from benchmarks.run_e2e import run_e2e as _run

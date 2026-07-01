@@ -19,6 +19,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from forge.flash_attn import flash_attention
+from forge.mlp import fused_linear_gelu
 from forge.reference import naive_attention, sdpa_attention
 
 ATTENTION_BACKENDS = {
@@ -65,9 +66,16 @@ class MLP(nn.Module):
         super().__init__()
         self.c_fc = nn.Linear(cfg.n_embd, 4 * cfg.n_embd)
         self.c_proj = nn.Linear(4 * cfg.n_embd, cfg.n_embd)
+        self.fused = False  # flip via GPT.set_mlp_fused
 
     def forward(self, x):
-        return self.c_proj(F.gelu(self.c_fc(x)))
+        if self.fused:
+            B, T, C = x.shape
+            h = fused_linear_gelu(x.reshape(B * T, C), self.c_fc.weight, self.c_fc.bias)
+            h = h.reshape(B, T, -1)
+        else:
+            h = F.gelu(self.c_fc(x), approximate="tanh")
+        return self.c_proj(h)
 
 
 class Block(nn.Module):
@@ -99,6 +107,11 @@ class GPT(nn.Module):
         assert name in ATTENTION_BACKENDS, name
         for block in self.blocks:
             block.attn.attn = name
+
+    def set_mlp_fused(self, fused: bool) -> None:
+        """Toggle the fused linear+GELU kernel in every MLP block."""
+        for block in self.blocks:
+            block.mlp.fused = fused
 
     def forward(self, idx: torch.Tensor) -> torch.Tensor:
         B, T = idx.shape
