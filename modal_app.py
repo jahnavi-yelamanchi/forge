@@ -30,6 +30,7 @@ image = (
     # Mount the project source so remote code == local code.
     .add_local_python_source("forge")
     .add_local_python_source("benchmarks")
+    .add_local_python_source("profiling")
     .add_local_dir("tests", remote_path="/root/tests")
 )
 
@@ -103,6 +104,48 @@ def run_bench(dtype: str = "float16") -> list[dict]:
     torch_dtype = {"float16": torch.float16, "bfloat16": torch.bfloat16}[dtype]
     print(f"=== Forge benchmark sweep ({dtype}) ===")
     return run_sweep(dtype=torch_dtype)
+
+
+@app.function(gpu=GPU, timeout=1800)
+def run_profile() -> dict:
+    """Autotune the kernel on the A100 across representative shapes."""
+    from profiling.profile_kernel import profile_timeline, sweep_configs
+
+    HEADS, HEAD_DIM = 12, 64
+    out = {"sweeps": [], "timeline": []}
+    for N in (2048, 4096):
+        shape = (4, HEADS, N, HEAD_DIM)
+        print(f"\n=== autotune sweep @ B=4 N={N} ===")
+        res = sweep_configs(shape)
+        out["sweeps"].append(res)
+        # torch.profiler evidence: default vs best.
+        from profiling.profile_kernel import DEFAULT_CFG
+
+        best_cfg = {k: res["best"][k] for k in ("block_m", "block_n", "num_warps", "num_stages")}
+        out["timeline"].append(
+            {
+                "seqlen": N,
+                "default": profile_timeline(shape, DEFAULT_CFG),
+                "best": profile_timeline(shape, best_cfg),
+            }
+        )
+    return out
+
+
+@app.local_entrypoint()
+def profile():
+    """`modal run modal_app.py::profile` -> autotune sweep + profiler timeline."""
+    import json
+    from pathlib import Path
+
+    out = run_profile.remote()
+    path = Path("profiling/tuning_results.json")
+    path.write_text(json.dumps(out, indent=2))
+    print(f"\nWrote {path}")
+    for s in out["sweeps"]:
+        n = s["shape"]["seqlen"]
+        b = s["best"]
+        print(f"  N={n}: best {b} -> {b['speedup_vs_default']}x over untuned default")
 
 
 @app.local_entrypoint()

@@ -1,0 +1,662 @@
+{
+  "sweeps": [
+    {
+      "shape": {
+        "batch": 4,
+        "heads": 12,
+        "seqlen": 2048,
+        "head_dim": 64
+      },
+      "default_ms": 0.4014,
+      "best": {
+        "block_m": 64,
+        "block_n": 64,
+        "num_warps": 4,
+        "num_stages": 3,
+        "latency_ms": 0.3958,
+        "speedup_vs_default": 1.014
+      },
+      "rows": [
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 0.4106,
+          "speedup_vs_default": 0.978
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 0.4142,
+          "speedup_vs_default": 0.969
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 0.4116,
+          "speedup_vs_default": 0.975
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 0.7521,
+          "speedup_vs_default": 0.534
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 0.7542,
+          "speedup_vs_default": 0.532
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 0.7465,
+          "speedup_vs_default": 0.538
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 0.3983,
+          "speedup_vs_default": 1.008
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 0.3958,
+          "speedup_vs_default": 1.014
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 0.4188,
+          "speedup_vs_default": 0.958
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 0.852,
+          "speedup_vs_default": 0.471
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 0.7588,
+          "speedup_vs_default": 0.529
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 0.7475,
+          "speedup_vs_default": 0.537
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 0.4454,
+          "speedup_vs_default": 0.901
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 0.427,
+          "speedup_vs_default": 0.94
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 0.5632,
+          "speedup_vs_default": 0.713
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 0.7414,
+          "speedup_vs_default": 0.541
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 0.6861,
+          "speedup_vs_default": 0.585
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 0.6897,
+          "speedup_vs_default": 0.582
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 0.5868,
+          "speedup_vs_default": 0.684
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 0.5852,
+          "speedup_vs_default": 0.686
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 0.5489,
+          "speedup_vs_default": 0.731
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 0.4654,
+          "speedup_vs_default": 0.862
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 0.4644,
+          "speedup_vs_default": 0.864
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 0.47,
+          "speedup_vs_default": 0.854
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 0.5565,
+          "speedup_vs_default": 0.721
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 0.555,
+          "speedup_vs_default": 0.723
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 0.5555,
+          "speedup_vs_default": 0.723
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 0.5135,
+          "speedup_vs_default": 0.782
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 0.5018,
+          "speedup_vs_default": 0.8
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 0.4659,
+          "speedup_vs_default": 0.862
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 0.5796,
+          "speedup_vs_default": 0.693
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 0.5468,
+          "speedup_vs_default": 0.734
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 0.7834,
+          "speedup_vs_default": 0.512
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 0.511,
+          "speedup_vs_default": 0.786
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 0.469,
+          "speedup_vs_default": 0.856
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 0.47,
+          "speedup_vs_default": 0.854
+        }
+      ]
+    },
+    {
+      "shape": {
+        "batch": 4,
+        "heads": 12,
+        "seqlen": 4096,
+        "head_dim": 64
+      },
+      "default_ms": 1.2653,
+      "best": {
+        "block_m": 64,
+        "block_n": 64,
+        "num_warps": 4,
+        "num_stages": 3,
+        "latency_ms": 0.985,
+        "speedup_vs_default": 1.285
+      },
+      "rows": [
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 1.2703,
+          "speedup_vs_default": 0.996
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 1.0779,
+          "speedup_vs_default": 1.174
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 1.057,
+          "speedup_vs_default": 1.197
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 2.0876,
+          "speedup_vs_default": 0.606
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 2.119,
+          "speedup_vs_default": 0.597
+        },
+        {
+          "block_m": 64,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 1.9949,
+          "speedup_vs_default": 0.634
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 0.999,
+          "speedup_vs_default": 1.267
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 0.985,
+          "speedup_vs_default": 1.285
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 1.0601,
+          "speedup_vs_default": 1.194
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 2.3267,
+          "speedup_vs_default": 0.544
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 2.0568,
+          "speedup_vs_default": 0.615
+        },
+        {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 2.0222,
+          "speedup_vs_default": 0.626
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 1.1217,
+          "speedup_vs_default": 1.128
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 1.0687,
+          "speedup_vs_default": 1.184
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 1.4632,
+          "speedup_vs_default": 0.865
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 1.9954,
+          "speedup_vs_default": 0.634
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 1.8161,
+          "speedup_vs_default": 0.697
+        },
+        {
+          "block_m": 64,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 1.8189,
+          "speedup_vs_default": 0.696
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 1.4458,
+          "speedup_vs_default": 0.875
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 1.4393,
+          "speedup_vs_default": 0.879
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 1.3352,
+          "speedup_vs_default": 0.948
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 1.1342,
+          "speedup_vs_default": 1.116
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 1.1307,
+          "speedup_vs_default": 1.119
+        },
+        {
+          "block_m": 128,
+          "block_n": 32,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 1.1428,
+          "speedup_vs_default": 1.107
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 1.3713,
+          "speedup_vs_default": 0.923
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 1.3641,
+          "speedup_vs_default": 0.928
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 1.3672,
+          "speedup_vs_default": 0.926
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 1.2655,
+          "speedup_vs_default": 1.0
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 1.2622,
+          "speedup_vs_default": 1.002
+        },
+        {
+          "block_m": 128,
+          "block_n": 64,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 1.1634,
+          "speedup_vs_default": 1.088
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 2,
+          "latency_ms": 1.4169,
+          "speedup_vs_default": 0.893
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 3,
+          "latency_ms": 1.332,
+          "speedup_vs_default": 0.95
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 4,
+          "num_stages": 4,
+          "latency_ms": 2.0385,
+          "speedup_vs_default": 0.621
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 2,
+          "latency_ms": 1.2858,
+          "speedup_vs_default": 0.984
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 3,
+          "latency_ms": 1.1706,
+          "speedup_vs_default": 1.081
+        },
+        {
+          "block_m": 128,
+          "block_n": 128,
+          "num_warps": 8,
+          "num_stages": 4,
+          "latency_ms": 1.1719,
+          "speedup_vs_default": 1.08
+        }
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "seqlen": 2048,
+      "default": {
+        "cfg": {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 2
+        },
+        "gpu_ms_per_call": 0.3394
+      },
+      "best": {
+        "cfg": {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 3
+        },
+        "gpu_ms_per_call": 0.3346
+      }
+    },
+    {
+      "seqlen": 4096,
+      "default": {
+        "cfg": {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 2
+        },
+        "gpu_ms_per_call": 0.9308
+      },
+      "best": {
+        "cfg": {
+          "block_m": 64,
+          "block_n": 64,
+          "num_warps": 4,
+          "num_stages": 3
+        },
+        "gpu_ms_per_call": 0.9193
+      }
+    }
+  ]
+}

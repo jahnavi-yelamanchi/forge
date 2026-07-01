@@ -156,12 +156,15 @@ def flash_attention(
     block_m: int = 64,
     block_n: int = 64,
     num_warps: int = 4,
-    num_stages: int = 2,
+    num_stages: int = 3,
 ) -> torch.Tensor:
     """Fused causal attention. Drop-in for :func:`forge.reference.naive_attention`.
 
     ``block_m/block_n/num_warps/num_stages`` are the tuning knobs profiled in
-    Phase 4; the defaults are a sane A100 fp16 starting point.
+    Phase 4. Defaults are the empirical A100 fp16 winner from the config sweep
+    (see docs/profiling.md): 64×64 tiles keep occupancy high at head_dim=64, and
+    ``num_stages=3`` deepens the software pipeline so the next K/V tile is
+    prefetched while the current tile's matmuls run (up to 1.28× vs num_stages=2).
     """
     if sm_scale is None:
         sm_scale = 1.0 / math.sqrt(q.size(-1))
