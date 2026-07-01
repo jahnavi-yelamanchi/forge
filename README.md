@@ -3,7 +3,14 @@
 > A FlashAttention-style **fused causal attention kernel** written in [Triton](https://triton-lang.org/),
 > drop-in for GPT-2, benchmarked against PyTorch and profiled/tuned on an **NVIDIA A100**.
 
-**Stack:** PyTorch · Triton · CUDA · Modal (A100) · Nsight Systems / `torch.profiler` / Triton `proton`
+**Stack:** PyTorch · Triton · CUDA · Modal (A100) · `torch.profiler`
+
+**TL;DR:** the fused kernel is **up to 18.9× faster** than a naive PyTorch
+attention baseline and moves **~33× less HBM traffic**; dropped into a full
+GPT-2 it delivers a **1.85× forward-pass speedup** and **matches PyTorch's
+production SDPA (FlashAttention-2) to within 1%**.
+
+![Speedup vs sequence length](docs/assets/speedup_vs_seqlen.png)
 
 ---
 
@@ -14,22 +21,61 @@ back for the softmax and the second matmul. That round-trip is memory-bandwidth 
 wasteful. **Forge** fuses the whole `softmax(QKᵀ / √d) · V` pipeline into a single Triton
 kernel using **online softmax** and **block tiling**, so the score matrix never leaves
 on-chip SRAM. The result is a faster forward pass and a large drop in HBM traffic.
+Full derivation in [`docs/design.md`](docs/design.md).
 
-**Target results** (forward pass, A100, fp16): **≈1.83× speedup** and **~2× effective
-memory bandwidth** vs. a standard PyTorch attention baseline.
+## Results
 
-> Status: 🚧 under construction — see the commit history for the build journey.
+Measured on **NVIDIA A100-SXM4-40GB**, fp16, causal, GPT-2-small head geometry
+(heads=12, head_dim=64). Full methodology + all plots in
+[`docs/benchmarks.md`](docs/benchmarks.md).
+
+### Kernel (attention in isolation)
+
+| Seqlen | Naive | **Forge (fused, tuned)** | PyTorch SDPA¹ |
+|-------:|------:|-------------------------:|--------------:|
+|   1024 | 1.00× |                **7.20×** |         10.3× |
+|   2048 | 1.00× |               **14.61×** |         19.6× |
+|   4096 | 1.00× |               **18.91×** |         24.5× |
+
+- **Up to 18.9× faster** than naive, and **~33× less HBM traffic** at N=4096 — the
+  fusion eliminates the N×N score-matrix round-trip.
+- Compute throughput rises from ~6 TFLOP/s (bandwidth-bound naive) to
+  **~115 TFLOP/s** (compute-bound fused).
+- [Profiling + tuning](docs/profiling.md) (pipeline depth + a two-phase causal
+  loop) narrowed the gap to SDPA from ~1.5× to **~1.3×**.
+
+### End-to-end (full GPT-2 forward, 12L, B=8, T=1024, fp16)
+
+| Backend | Latency | Speedup vs naive |
+|---------|--------:|-----------------:|
+| Naive (PyTorch) | 40.5 ms | 1.00× |
+| PyTorch SDPA | 21.7 ms | 1.86× |
+| **Forge (fused)** | **21.9 ms** | **1.85×** |
+
+Swapping Forge into GPT-2 gives a **1.85× forward-pass speedup** and matches SDPA
+to within 1%; the fused path's logits differ from SDPA by at most **2.9e-3**.
+
+![GPT-2 end-to-end forward](docs/assets/e2e_forward.png)
+
+¹ SDPA is NVIDIA's production FlashAttention-2 (hand-tuned CUDA) — the ceiling Forge chases.
 
 ## How it runs
 
-All GPU work executes on **Modal A100** (the dev machine has no CUDA). Local machine is
-for editing, git, and orchestrating Modal runs.
+All GPU work executes on **Modal A100** (the dev machine has no CUDA); the local
+machine only edits code, runs git, and orchestrates Modal.
 
 ```bash
-modal run modal_app.py::smoke        # confirm A100 + torch + triton
-modal run modal_app.py::run_tests    # correctness: fused vs PyTorch reference
-modal run modal_app.py::run_bench    # benchmark sweep (batch × seqlen) -> CSV
-modal run modal_app.py::run_profile  # profiler traces for the tuning loop
+# one-time local setup
+python -m venv .venv && source .venv/bin/activate
+pip install -e .            # local-side deps (modal, numpy, pandas, matplotlib)
+modal token new             # if not already configured
+
+# run on the A100
+modal run modal_app.py               # smoke test: confirm A100 + torch + triton
+modal run modal_app.py::run_tests    # correctness: fused vs PyTorch SDPA (18 tests)
+modal run modal_app.py::bench        # benchmark sweep -> results.csv + plots
+modal run modal_app.py::profile      # 36-config autotune + torch.profiler
+modal run modal_app.py::e2e          # end-to-end GPT-2 forward across backends
 ```
 
 ## Repo layout
@@ -38,46 +84,31 @@ modal run modal_app.py::run_profile  # profiler traces for the tuning loop
 |------|------|
 | `forge/flash_attn.py` | Triton fused forward kernel + `autograd.Function` wrapper |
 | `forge/reference.py`  | PyTorch attention baselines (naive + SDPA) |
-| `forge/gpt2.py`       | Minimal GPT-2 with swappable attention |
+| `forge/gpt2.py`       | Minimal GPT-2 with swappable attention backend |
+| `forge/utils.py`      | Timing, FLOP/bandwidth accounting, tolerances |
 | `modal_app.py`        | Modal A100 image + remote entrypoints |
-| `benchmarks/`         | Sweep harness + plotting |
-| `profiling/`          | Profiler drivers + tuning notes |
-| `docs/`               | Design math, benchmark methodology, profiling writeup |
+| `benchmarks/`         | Sweep + end-to-end harness + plotting |
+| `profiling/`          | Autotune grid + `torch.profiler` driver |
+| `tests/`              | Correctness suite (fused vs SDPA, fp16+bf16) |
+| `docs/`               | [Design math](docs/design.md) · [benchmarks](docs/benchmarks.md) · [profiling](docs/profiling.md) |
 
-## Results
+## Notes & caveats
 
-Measured on **NVIDIA A100-SXM4-40GB**, fp16, causal, GPT-2-small heads (full
-methodology + more plots in [`docs/benchmarks.md`](docs/benchmarks.md)).
-
-![Speedup vs sequence length](docs/assets/speedup_vs_seqlen.png)
-
-| Seqlen | Naive | **Forge (fused, tuned)** | PyTorch SDPA¹ |
-|-------:|------:|-------------------------:|--------------:|
-|   1024 | 1.00× |                **7.20×** |         10.3× |
-|   2048 | 1.00× |               **14.61×** |         19.6× |
-|   4096 | 1.00× |               **18.91×** |         24.5× |
-
-- **Up to 18.9× faster** than a naive PyTorch baseline, and **~33× less HBM
-  traffic** at N=4096 — the fusion eliminates the N×N score-matrix round-trip.
-- Compute throughput rises from ~6 TFLOP/s (bandwidth-bound naive) to
-  **~115 TFLOP/s** (compute-bound fused).
-- Phase-4 tuning (pipeline depth + two-phase causal loop) narrows the gap to
-  PyTorch SDPA from ~1.5× to **~1.3×**. See [`docs/profiling.md`](docs/profiling.md).
-
-**End-to-end**, dropped into a full GPT-2 (12L, B=8, T=1024, fp16), Forge gives a
-**1.85× forward-pass speedup** over the naive baseline — matching PyTorch SDPA to
-within 1%, with logits identical to 2.9e-3.
-
-![GPT-2 end-to-end forward](docs/assets/e2e_forward.png)
-
-¹ SDPA is NVIDIA's production FlashAttention-2 (hand-tuned CUDA); it's the ceiling
-Forge chases.
+- Benchmarks use **random weights** — we measure forward *latency* and
+  *implementation consistency*, not model quality.
+- Numbers are a single A100-SXM4-40GB, fp16, causal, median of timed CUDA-event
+  runs; expect a few % run-to-run variance (the naive baseline is noisiest).
+- NCU's hardware counters are locked in Modal's containers (`ERR_NVGPUCTRPERM`),
+  so tuning relies on `torch.profiler` + a launch-config grid search rather than
+  raw Nsight Compute.
+- Forge targets the **forward** pass; the `autograd.Function` backward currently
+  defers to PyTorch (a clean seam for a fused backward kernel).
 
 ## Roadmap
 
 - [x] Repo + Modal A100 infrastructure
 - [x] PyTorch attention baselines + correctness harness
-- [x] Fused FlashAttention **forward** kernel in Triton — _17/17 tests vs SDPA (fp16+bf16, N≤2048)_
+- [x] Fused FlashAttention **forward** kernel in Triton — _18/18 tests vs SDPA (fp16+bf16)_
 - [x] Benchmark sweep + speedup/bandwidth results — _up to 18.9× vs naive, ~33× less HBM traffic_
 - [x] Profiling + tuning loop (pipeline depth + two-phase causal) — _gap to SDPA 1.5×→1.3×_
 - [x] End-to-end GPT-2 integration — _1.85× forward speedup, logits match SDPA to 2.9e-3_
