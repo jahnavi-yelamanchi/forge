@@ -29,6 +29,7 @@ image = (
     )
     # Mount the project source so remote code == local code.
     .add_local_python_source("forge")
+    .add_local_python_source("benchmarks")
     .add_local_dir("tests", remote_path="/root/tests")
 )
 
@@ -90,6 +91,39 @@ def run_tests() -> int:
     print(f"PYTEST| exit code: {int(code)}")
     sys.stdout.flush()
     return int(code)
+
+
+@app.function(gpu=GPU)
+def run_bench(dtype: str = "float16") -> list[dict]:
+    """Run the benchmark sweep on the A100, return metric rows (primitives)."""
+    import torch
+
+    from benchmarks.run_bench import run_sweep
+
+    torch_dtype = {"float16": torch.float16, "bfloat16": torch.bfloat16}[dtype]
+    print(f"=== Forge benchmark sweep ({dtype}) ===")
+    return run_sweep(dtype=torch_dtype)
+
+
+@app.local_entrypoint()
+def bench(dtype: str = "float16"):
+    """`modal run modal_app.py::bench` -> sweep on A100, write CSV + plots locally."""
+    import csv
+    from pathlib import Path
+
+    rows = run_bench.remote(dtype=dtype)
+
+    csv_path = Path("benchmarks/results.csv")
+    with csv_path.open("w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=list(rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(rows)
+    print(f"\nWrote {len(rows)} rows -> {csv_path}")
+
+    from benchmarks.plot import main as plot_main
+
+    plot_main(str(csv_path), "docs/assets")
+    print("Plots written to docs/assets/ ✅")
 
 
 @app.local_entrypoint()

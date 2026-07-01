@@ -46,14 +46,32 @@ modal run modal_app.py::run_profile  # profiler traces for the tuning loop
 
 ## Results
 
-_Populated as the project progresses (see `docs/benchmarks.md`)._
+Measured on **NVIDIA A100-SXM4-40GB**, fp16, causal, GPT-2-small heads (full
+methodology + more plots in [`docs/benchmarks.md`](docs/benchmarks.md)).
+
+![Speedup vs sequence length](docs/assets/speedup_vs_seqlen.png)
+
+| Seqlen | Naive | **Forge (fused)** | PyTorch SDPA¹ |
+|-------:|------:|------------------:|--------------:|
+|   1024 | 1.00× |         **6.34×** |         9.96× |
+|   2048 | 1.00× |        **11.33×** |        17.10× |
+|   4096 | 1.00× |        **16.58×** |        24.56× |
+
+- **Up to 16.6× faster** than a naive PyTorch baseline, and **~33× less HBM
+  traffic** at N=4096 — the fusion eliminates the N×N score-matrix round-trip.
+- Compute throughput rises from ~6 TFLOP/s (bandwidth-bound naive) to
+  **~100 TFLOP/s** (compute-bound fused).
+
+¹ SDPA is NVIDIA's production FlashAttention-2 (hand-tuned CUDA); it's the ceiling
+Forge chases. The numbers above use the **untuned** default launch config — the
+[profiling + tuning loop](docs/profiling.md) closes the gap.
 
 ## Roadmap
 
 - [x] Repo + Modal A100 infrastructure
 - [x] PyTorch attention baselines + correctness harness
 - [x] Fused FlashAttention **forward** kernel in Triton — _17/17 tests vs SDPA (fp16+bf16, N≤2048)_
-- [ ] Benchmark sweep + speedup/bandwidth results
+- [x] Benchmark sweep + speedup/bandwidth results — _up to 16.6× vs naive, ~33× less HBM traffic_
 - [ ] Profiling + tuning loop (block sizes, pipelining, SRAM reuse)
 - [ ] End-to-end GPT-2 integration
 - [ ] _Future:_ fused **backward** kernel · MLP/GELU fusion
