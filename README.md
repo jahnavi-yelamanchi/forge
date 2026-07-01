@@ -51,28 +51,29 @@ methodology + more plots in [`docs/benchmarks.md`](docs/benchmarks.md)).
 
 ![Speedup vs sequence length](docs/assets/speedup_vs_seqlen.png)
 
-| Seqlen | Naive | **Forge (fused)** | PyTorch SDPA¹ |
-|-------:|------:|------------------:|--------------:|
-|   1024 | 1.00× |         **6.34×** |         9.96× |
-|   2048 | 1.00× |        **11.33×** |        17.10× |
-|   4096 | 1.00× |        **16.58×** |        24.56× |
+| Seqlen | Naive | **Forge (fused, tuned)** | PyTorch SDPA¹ |
+|-------:|------:|-------------------------:|--------------:|
+|   1024 | 1.00× |                **7.20×** |         10.3× |
+|   2048 | 1.00× |               **14.61×** |         19.6× |
+|   4096 | 1.00× |               **18.91×** |         24.5× |
 
-- **Up to 16.6× faster** than a naive PyTorch baseline, and **~33× less HBM
+- **Up to 18.9× faster** than a naive PyTorch baseline, and **~33× less HBM
   traffic** at N=4096 — the fusion eliminates the N×N score-matrix round-trip.
 - Compute throughput rises from ~6 TFLOP/s (bandwidth-bound naive) to
-  **~100 TFLOP/s** (compute-bound fused).
+  **~115 TFLOP/s** (compute-bound fused).
+- Phase-4 tuning (pipeline depth + two-phase causal loop) narrows the gap to
+  PyTorch SDPA from ~1.5× to **~1.3×**. See [`docs/profiling.md`](docs/profiling.md).
 
 ¹ SDPA is NVIDIA's production FlashAttention-2 (hand-tuned CUDA); it's the ceiling
-Forge chases. The numbers above use the **untuned** default launch config — the
-[profiling + tuning loop](docs/profiling.md) closes the gap.
+Forge chases.
 
 ## Roadmap
 
 - [x] Repo + Modal A100 infrastructure
 - [x] PyTorch attention baselines + correctness harness
 - [x] Fused FlashAttention **forward** kernel in Triton — _17/17 tests vs SDPA (fp16+bf16, N≤2048)_
-- [x] Benchmark sweep + speedup/bandwidth results — _up to 16.6× vs naive, ~33× less HBM traffic_
-- [ ] Profiling + tuning loop (block sizes, pipelining, SRAM reuse)
+- [x] Benchmark sweep + speedup/bandwidth results — _up to 18.9× vs naive, ~33× less HBM traffic_
+- [x] Profiling + tuning loop (pipeline depth + two-phase causal) — _gap to SDPA 1.5×→1.3×_
 - [ ] End-to-end GPT-2 integration
 - [ ] _Future:_ fused **backward** kernel · MLP/GELU fusion
 

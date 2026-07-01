@@ -20,18 +20,17 @@ Three implementations are compared:
 
 ![Speedup vs seqlen](assets/speedup_vs_seqlen.png)
 
-| Seqlen | Naive | **Forge (fused)** | PyTorch SDPA |
-|-------:|------:|------------------:|-------------:|
-|    512 | 1.00× |         **3.22×** |        5.79× |
-|   1024 | 1.00× |         **6.34×** |        9.96× |
-|   2048 | 1.00× |        **11.33×** |       17.10× |
-|   4096 | 1.00× |        **16.58×** |       24.56× |
+| Seqlen | Naive | **Forge (fused, tuned)** | PyTorch SDPA |
+|-------:|------:|-------------------------:|-------------:|
+|    512 | 1.00× |                **3.25×** |        5.61× |
+|   1024 | 1.00× |                **7.20×** |       10.32× |
+|   2048 | 1.00× |               **14.61×** |       19.56× |
+|   4096 | 1.00× |               **18.91×** |       24.47× |
 
-Forge is up to **16.6× faster than the naive baseline**, and the gap widens with
-sequence length — exactly as the memory-traffic argument predicts. Forge is
-currently ~1.5× behind PyTorch SDPA; closing that gap is the goal of the Phase-4
-profiling + tuning loop (this run uses the default, untuned launch config:
-`BLOCK_M=BLOCK_N=64, num_stages=2`).
+Forge is up to **18.9× faster than the naive baseline**, and the gap widens with
+sequence length — exactly as the memory-traffic argument predicts. After the
+[Phase-4 tuning loop](profiling.md) (pipeline depth + two-phase causal loop),
+Forge sits within **~1.3×** of PyTorch SDPA's hand-tuned CUDA (down from ~1.5×).
 
 ## Why: HBM traffic
 
@@ -47,8 +46,8 @@ This is the root cause of both the speedup and the higher compute throughput.
 ![TFLOP/s vs seqlen](assets/tflops_vs_seqlen.png)
 
 The naive kernel is memory-bandwidth bound and plateaus around **6 TFLOP/s**.
-Freed from the N×N round-trip, Forge reaches **~100 TFLOP/s** at N=4096 (SDPA:
-~148). On a 312 TFLOP/s-peak A100, that is the difference between a
+Freed from the N×N round-trip, Forge reaches **~115 TFLOP/s** at N=4096 (SDPA:
+~149). On a 312 TFLOP/s-peak A100, that is the difference between a
 bandwidth-bound and a compute-bound kernel.
 
 ## Latency
@@ -65,9 +64,9 @@ Speedup vs naive is stable across batch sizes, confirming the win is structural
 
 | Batch | **Forge** | SDPA |
 |------:|----------:|-----:|
-|     1 |     3.19× | 5.91× |
-|     2 |     4.80× | 8.91× |
-|     4 |     6.43× | 10.70× |
-|     8 |     8.74× | 13.12× |
+|     1 |     3.42× | 5.85× |
+|     2 |     5.29× | 9.08× |
+|     4 |     7.37× | 11.03× |
+|     8 |     9.81× | 13.41× |
 
 Raw data: [`benchmarks/results.csv`](../benchmarks/results.csv).

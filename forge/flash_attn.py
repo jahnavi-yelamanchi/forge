@@ -22,6 +22,57 @@ import triton.language as tl
 
 
 @triton.jit
+def _attend(
+    acc, l_i, m_i,
+    q,
+    k_base, v_base,
+    stride_kn, stride_kd, stride_vn, stride_vd,
+    offs_m, offs_n, offs_d,
+    sm_scale, N,
+    lo, hi,
+    BLOCK_N: tl.constexpr,
+    MASK: tl.constexpr,
+    CAUSAL: tl.constexpr,
+):
+    """Fold key/value tiles in ``[lo, hi)`` into the running softmax state.
+
+    ``MASK=False`` is the fast path for tiles that are guaranteed in-range and
+    (under causality) fully below the diagonal — no bounds check, no ``tl.where``.
+    ``MASK=True`` handles the diagonal tile (causal compare) and any ragged tail
+    (bounds check).
+    """
+    for start_n in range(lo, hi, BLOCK_N):
+        start_n = tl.multiple_of(start_n, BLOCK_N)
+        key_idx = start_n + offs_n
+
+        k_ptrs = k_base + key_idx[None, :] * stride_kn + offs_d[:, None] * stride_kd
+        v_ptrs = v_base + key_idx[:, None] * stride_vn + offs_d[None, :] * stride_vd
+        if MASK:
+            k = tl.load(k_ptrs, mask=key_idx[None, :] < N, other=0.0)
+            v = tl.load(v_ptrs, mask=key_idx[:, None] < N, other=0.0)
+        else:
+            k = tl.load(k_ptrs)
+            v = tl.load(v_ptrs)
+
+        qk = tl.dot(q, k) * sm_scale  # (BLOCK_M, BLOCK_N), fp32
+        if MASK:
+            valid = key_idx[None, :] < N
+            if CAUSAL:
+                valid = valid & (offs_m[:, None] >= key_idx[None, :])
+            qk = tl.where(valid, qk, float("-inf"))
+
+        # online-softmax update
+        m_ij = tl.max(qk, axis=1)
+        m_new = tl.maximum(m_i, m_ij)
+        p = tl.exp(qk - m_new[:, None])
+        alpha = tl.exp(m_i - m_new)
+        l_i = l_i * alpha + tl.sum(p, axis=1)
+        acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
+        m_i = m_new
+    return acc, l_i, m_i
+
+
+@triton.jit
 def _flash_fwd_kernel(
     Q, K, V, O,
     sm_scale,
@@ -62,36 +113,33 @@ def _flash_fwd_kernel(
     l_i = tl.zeros([BLOCK_M], dtype=tl.float32)
     acc = tl.zeros([BLOCK_M, BLOCK_D], dtype=tl.float32)
 
-    # Causal: a query at row i only attends to keys j <= i, so we never need key
-    # blocks that start past this query block's last row.
-    hi = (start_m + 1) * BLOCK_M if CAUSAL else N
-
-    for start_n in range(0, hi, BLOCK_N):
-        start_n = tl.multiple_of(start_n, BLOCK_N)
-        key_idx = start_n + offs_n  # absolute key indices for this tile
-
-        # K is loaded transposed (BLOCK_D, BLOCK_N) so tl.dot gives QKᵀ directly.
-        k_ptrs = k_base + key_idx[None, :] * stride_kn + offs_d[:, None] * stride_kd
-        v_ptrs = v_base + key_idx[:, None] * stride_vn + offs_d[None, :] * stride_vd
-        k = tl.load(k_ptrs, mask=key_idx[None, :] < N, other=0.0)  # (BLOCK_D, BLOCK_N)
-        v = tl.load(v_ptrs, mask=key_idx[:, None] < N, other=0.0)  # (BLOCK_N, BLOCK_D)
-
-        qk = tl.dot(q, k) * sm_scale  # (BLOCK_M, BLOCK_N), fp32 accumulate
-
-        # Mask invalid keys: out-of-range padding and (if causal) the future.
-        valid = key_idx[None, :] < N
-        if CAUSAL:
-            valid = valid & (offs_m[:, None] >= key_idx[None, :])
-        qk = tl.where(valid, qk, float("-inf"))
-
-        # --- online-softmax update -------------------------------------------
-        m_ij = tl.max(qk, axis=1)            # this tile's row max
-        m_new = tl.maximum(m_i, m_ij)        # new running max
-        p = tl.exp(qk - m_new[:, None])      # rescaled probabilities for this tile
-        alpha = tl.exp(m_i - m_new)          # factor to rescale prior state
-        l_i = l_i * alpha + tl.sum(p, axis=1)
-        acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
-        m_i = m_new
+    # Two-phase causal loop. A query at row i only attends to keys j <= i.
+    #   * Full blocks  [0, diag)         are strictly below the diagonal for every
+    #     row in this query block -> no masking needed (MASK=False fast path).
+    #   * Diagonal block(s) [diag, end)  straddle the diagonal -> causal mask.
+    # (Requires BLOCK_M % BLOCK_N == 0 so `diag` is BLOCK_N-aligned; enforced in
+    # the wrapper.) Non-causal is a single masked pass over all keys.
+    if CAUSAL:
+        diag = start_m * BLOCK_M
+        acc, l_i, m_i = _attend(
+            acc, l_i, m_i, q, k_base, v_base,
+            stride_kn, stride_kd, stride_vn, stride_vd,
+            offs_m, offs_n, offs_d, sm_scale, N,
+            0, diag, BLOCK_N, MASK=False, CAUSAL=True,
+        )
+        acc, l_i, m_i = _attend(
+            acc, l_i, m_i, q, k_base, v_base,
+            stride_kn, stride_kd, stride_vn, stride_vd,
+            offs_m, offs_n, offs_d, sm_scale, N,
+            diag, (start_m + 1) * BLOCK_M, BLOCK_N, MASK=True, CAUSAL=True,
+        )
+    else:
+        acc, l_i, m_i = _attend(
+            acc, l_i, m_i, q, k_base, v_base,
+            stride_kn, stride_kd, stride_vn, stride_vd,
+            offs_m, offs_n, offs_d, sm_scale, N,
+            0, N, BLOCK_N, MASK=True, CAUSAL=False,
+        )
 
     acc = acc / l_i[:, None]  # finalize the softmax denominator
     o_ptrs = o_base + offs_m[:, None] * stride_om + offs_d[None, :] * stride_od
@@ -109,6 +157,7 @@ class FlashAttnFunc(torch.autograd.Function):
         B, H, N, D = q.shape
         assert q.is_cuda and q.is_contiguous(), "expect contiguous CUDA tensors"
         assert D in (16, 32, 64, 128), f"head_dim {D} must be a power of two <= 128"
+        assert block_m % block_n == 0, "two-phase causal loop needs BLOCK_M % BLOCK_N == 0"
 
         o = torch.empty_like(q)
         grid = (triton.cdiv(N, block_m), B * H)
