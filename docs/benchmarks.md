@@ -79,15 +79,16 @@ in — everything else identical. B=8, T=1024.
 
 ![GPT-2 end-to-end forward](assets/e2e_forward.png)
 
-| Backend | Forward latency | Speedup vs naive |
-|---------|----------------:|-----------------:|
-| Naive (PyTorch) | 40.5 ms | 1.00× |
-| PyTorch SDPA | 21.7 ms | 1.86× |
-| **Forge (fused)** | **21.9 ms** | **1.85×** |
+| Backend | Forward | Speedup | Train step (fwd+bwd) | Speedup |
+|---------|--------:|--------:|---------------------:|--------:|
+| Naive (PyTorch) | 40.5 ms | 1.00× | 110.5 ms | 1.00× |
+| PyTorch SDPA | 21.9 ms | 1.85× | 67.2 ms | 1.64× |
+| **Forge (fused)** | **22.0 ms** | **1.83×** | **68.7 ms** | **1.61×** |
 
-Swapping Forge's fused kernel into GPT-2 delivers a **1.85× end-to-end forward
-speedup** over the naive baseline and **matches PyTorch SDPA to within 1%** — at
-the full-model level, attention shares the runtime with the MLP, LayerNorms, and
-projections, so the small kernel-level gap to SDPA washes out. The fused path's
-logits differ from SDPA by at most **2.9e-3** (max abs), confirming the swap is
-numerically safe. Reproduce with `modal run modal_app.py::e2e`.
+Swapping Forge's fused kernels (forward **and** backward) into GPT-2 delivers a
+**1.83× forward** and **1.61× training-step** speedup over the naive baseline, and
+**matches PyTorch SDPA to within ~2%**. At the full-model level, attention shares
+the runtime with the MLP, LayerNorms, and projections, so the small kernel-level
+gap to SDPA washes out. The fused path's logits differ from SDPA by at most
+**2.9e-3** (max abs), and its gradients match SDPA autograd within fp16 tolerance.
+Reproduce with `modal run modal_app.py::e2e`.

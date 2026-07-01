@@ -90,9 +90,24 @@ operands are cast back to fp16/bf16 to use tensor cores (standard FlashAttention
 practice). Tolerances vs. PyTorch SDPA: `atol=rtol=2e-2` (fp16), `4e-2` (bf16) —
 see `tests/test_correctness.py`.
 
-## Backward (future)
+## Backward pass
 
-`FlashAttnFunc.backward` currently recomputes gradients via PyTorch autograd — a
-correct, self-contained seam. A fused Triton backward kernel (recomputing `S`/`P`
-tile-wise from the saved `m`/`ℓ` statistics) drops in there without changing the
-public API.
+The backward is fused too (`_bwd_*` kernels in `forge/flash_attn.py`). The forward
+stores one extra number per query row — the **log-sum-exp** `L = m + log(ℓ)` — so
+the backward rebuilds the softmax probabilities tile-wise as `P = exp(S − L)`
+without recomputing the row max and without ever materializing the N×N matrix in
+HBM (same memory argument as the forward).
+
+With `S = scale·QKᵀ`, `P = softmax(S)`, `D = rowsum(dO∘O)`:
+
+```
+dV = Pᵀ·dO,   dP = dO·Vᵀ,   dS = P∘(dP − D),   dQ = scale·dS·K,   dK = scale·dSᵀ·Q
+```
+
+`dQ` accumulates over key blocks while `dK`/`dV` accumulate over query blocks, so
+they can't share one grid without atomics. We use **two kernels** — `_bwd_dkdv`
+(one program per key block, loops query blocks) and `_bwd_dq` (one program per
+query block, loops key blocks) — plus a small `_bwd_preprocess` pass that computes
+`D`. Causal masking mirrors the forward. Gradients match PyTorch SDPA autograd to
+within fp16 tolerance (`tests/test_correctness.py`), and the fused backward gives
+a **1.61× GPT-2 training-step speedup** vs the naive baseline (`docs/benchmarks.md`).

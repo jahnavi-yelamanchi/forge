@@ -14,39 +14,59 @@ from forge import utils
 from forge.gpt2 import GPT, GPT2Config
 
 
-@torch.no_grad()
+def _train_step_ms(model, idx) -> float | None:
+    """Median forward+backward (training step) latency, or None on OOM."""
+    def step():
+        model.zero_grad(set_to_none=True)
+        loss = model(idx).float().mean()
+        loss.backward()
+
+    try:
+        return utils.bench_ms(step, warmup=3, iters=10)
+    except torch.cuda.OutOfMemoryError:
+        torch.cuda.empty_cache()
+        return None
+
+
 def run_e2e(batch: int = 8, seqlen: int = 1024, dtype: torch.dtype = torch.float16) -> dict:
     assert torch.cuda.is_available(), "CUDA required"
     utils.set_seed(0)
 
     cfg = GPT2Config(block_size=seqlen)
-    model = GPT(cfg).cuda().to(dtype).eval()
+    model = GPT(cfg).cuda().to(dtype)
     idx = torch.randint(0, cfg.vocab_size, (batch, seqlen), device="cuda")
 
     logits = {}
-    latency = {}
+    fwd_ms = {}
+    train_ms = {}
     for backend in ("naive", "sdpa", "fused"):
         model.set_attention_backend(backend)
-        logits[backend] = model(idx)
-        latency[backend] = utils.bench_ms(lambda: model(idx), warmup=5, iters=20)
-        print(f"  {backend:5s}: {latency[backend]:8.3f} ms")
+        with torch.no_grad():
+            logits[backend] = model(idx)
+            fwd_ms[backend] = utils.bench_ms(lambda: model(idx), warmup=5, iters=20)
+        train_ms[backend] = _train_step_ms(model, idx)
+        tr = f"{train_ms[backend]:8.3f}" if train_ms[backend] else "    OOM"
+        print(f"  {backend:5s}: fwd {fwd_ms[backend]:8.3f} ms | train {tr} ms")
 
-    base = latency["naive"]
-    # Numerical agreement of the fused kernel vs SDPA, over the full model stack.
+    base_f = fwd_ms["naive"]
+    base_t = train_ms["naive"]
     diff = (logits["fused"].float() - logits["sdpa"].float()).abs()
-    rel = diff / (logits["sdpa"].float().abs() + 1e-3)
+
+    def train_speedup(k):
+        return round(base_t / train_ms[k], 3) if (base_t and train_ms[k]) else None
 
     result = {
         "config": {"n_layer": cfg.n_layer, "n_head": cfg.n_head, "n_embd": cfg.n_embd,
                    "batch": batch, "seqlen": seqlen, "dtype": str(dtype).replace("torch.", "")},
-        "latency_ms": {k: round(v, 4) for k, v in latency.items()},
-        "speedup_vs_naive": {k: round(base / v, 3) for k, v in latency.items()},
-        "fused_speedup_over_sdpa": round(latency["sdpa"] / latency["fused"], 3),
+        "latency_ms": {k: round(v, 4) for k, v in fwd_ms.items()},
+        "speedup_vs_naive": {k: round(base_f / v, 3) for k, v in fwd_ms.items()},
+        "train_ms": {k: (round(v, 4) if v else None) for k, v in train_ms.items()},
+        "train_speedup_vs_naive": {k: train_speedup(k) for k in train_ms},
+        "fused_speedup_over_sdpa": round(fwd_ms["sdpa"] / fwd_ms["fused"], 3),
         "fused_vs_sdpa_max_abs": round(float(diff.max()), 4),
-        "fused_vs_sdpa_max_rel": round(float(rel.max()), 4),
     }
     print(
-        f"\n  end-to-end: fused {result['speedup_vs_naive']['fused']}x vs naive, "
-        f"logits vs SDPA max_abs={result['fused_vs_sdpa_max_abs']}"
+        f"\n  forward: fused {result['speedup_vs_naive']['fused']}x vs naive | "
+        f"train step: fused {result['train_speedup_vs_naive']['fused']}x vs naive"
     )
     return result

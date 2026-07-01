@@ -74,7 +74,7 @@ def _attend(
 
 @triton.jit
 def _flash_fwd_kernel(
-    Q, K, V, O,
+    Q, K, V, O, L,
     sm_scale,
     stride_qb, stride_qh, stride_qm, stride_qd,
     stride_kb, stride_kh, stride_kn, stride_kd,
@@ -145,12 +145,149 @@ def _flash_fwd_kernel(
     o_ptrs = o_base + offs_m[:, None] * stride_om + offs_d[None, :] * stride_od
     tl.store(o_ptrs, acc.to(O.dtype.element_ty), mask=offs_m[:, None] < N)
 
+    # Save the log-sum-exp per query row so the backward pass can rebuild the
+    # softmax probabilities (P = exp(S - L)) without recomputing the row max.
+    tl.store(L + off_bh * N + offs_m, m_i + tl.log(l_i), mask=offs_m < N)
+
+
+# ---------------------------------------------------------------------------
+# Backward pass
+#
+# FlashAttention backward recomputes the softmax probabilities tile-wise from the
+# saved log-sum-exp (no N×N matrix in HBM, same as forward) and produces dQ, dK,
+# dV. Using the identities (with S = scale·QKᵀ, P = softmax(S) = exp(S − L)):
+#   dV = Pᵀ·dO,  dP = dO·Vᵀ,  D = rowsum(dO∘O),  dS = P∘(dP − D),
+#   dQ = scale·dS·K,  dK = scale·dSᵀ·Q.
+# dQ accumulates over key blocks while dK/dV accumulate over query blocks, so we
+# use two kernels (parallel over query- vs key-blocks) to avoid atomics.
+# ---------------------------------------------------------------------------
+
+
+@triton.jit
+def _bwd_preprocess(
+    O, DO, Delta,
+    stride_ob, stride_oh, stride_om, stride_od,
+    N,
+    H: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_D: tl.constexpr,
+):
+    """Delta[b,h,m] = sum_d O·dO — the softmax-jacobian correction term."""
+    start_m = tl.program_id(0)
+    off_bh = tl.program_id(1)
+    off_b, off_h = off_bh // H, off_bh % H
+    offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_d = tl.arange(0, BLOCK_D)
+
+    base = off_b * stride_ob + off_h * stride_oh
+    ptrs = base + offs_m[:, None] * stride_om + offs_d[None, :] * stride_od
+    o = tl.load(O + ptrs, mask=offs_m[:, None] < N, other=0.0).to(tl.float32)
+    do = tl.load(DO + ptrs, mask=offs_m[:, None] < N, other=0.0).to(tl.float32)
+    tl.store(Delta + off_bh * N + offs_m, tl.sum(o * do, axis=1), mask=offs_m < N)
+
+
+@triton.jit
+def _bwd_dkdv_kernel(
+    Q, K, V, DO, DK, DV, L, Delta, sm_scale,
+    stride_qb, stride_qh, stride_qm, stride_qd,
+    stride_kb, stride_kh, stride_kn, stride_kd,
+    N,
+    H: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+    BLOCK_D: tl.constexpr, CAUSAL: tl.constexpr,
+):
+    """One key/value block; accumulate dK, dV by looping over query blocks."""
+    start_n = tl.program_id(0)
+    off_bh = tl.program_id(1)
+    off_b, off_h = off_bh // H, off_bh % H
+    offs_n = start_n * BLOCK_N + tl.arange(0, BLOCK_N)
+    offs_d = tl.arange(0, BLOCK_D)
+
+    q_base = off_b * stride_qb + off_h * stride_qh
+    k_base = off_b * stride_kb + off_h * stride_kh
+
+    kv_ptrs = k_base + offs_n[:, None] * stride_kn + offs_d[None, :] * stride_kd
+    k = tl.load(K + kv_ptrs, mask=offs_n[:, None] < N, other=0.0)  # (BLOCK_N, D)
+    v = tl.load(V + kv_ptrs, mask=offs_n[:, None] < N, other=0.0)
+
+    dk = tl.zeros([BLOCK_N, BLOCK_D], dtype=tl.float32)
+    dv = tl.zeros([BLOCK_N, BLOCK_D], dtype=tl.float32)
+
+    # Causal: only queries m >= n contribute; start at the block containing n.
+    lo = (start_n * BLOCK_N // BLOCK_M) * BLOCK_M if CAUSAL else 0
+    for start_m in range(lo, N, BLOCK_M):
+        offs_m = start_m + tl.arange(0, BLOCK_M)
+        qd_ptrs = q_base + offs_m[:, None] * stride_qm + offs_d[None, :] * stride_qd
+        q = tl.load(Q + qd_ptrs, mask=offs_m[:, None] < N, other=0.0)
+        do = tl.load(DO + qd_ptrs, mask=offs_m[:, None] < N, other=0.0)
+        l_i = tl.load(L + off_bh * N + offs_m, mask=offs_m < N, other=0.0)
+        delta = tl.load(Delta + off_bh * N + offs_m, mask=offs_m < N, other=0.0)
+
+        qk = tl.dot(q, tl.trans(k)) * sm_scale               # (BLOCK_M, BLOCK_N)
+        p = tl.exp(qk - l_i[:, None])
+        keep = (offs_m[:, None] < N) & (offs_n[None, :] < N)
+        if CAUSAL:
+            keep = keep & (offs_m[:, None] >= offs_n[None, :])
+        p = tl.where(keep, p, 0.0)
+
+        dv += tl.dot(tl.trans(p).to(do.dtype), do)           # Pᵀ·dO
+        dp = tl.dot(do, tl.trans(v))                         # dO·Vᵀ
+        ds = p * (dp - delta[:, None])                        # P∘(dP − D)
+        dk += tl.dot(tl.trans(ds).to(q.dtype), q)            # dSᵀ·Q
+
+    dk *= sm_scale
+    tl.store(DK + kv_ptrs, dk.to(DK.dtype.element_ty), mask=offs_n[:, None] < N)
+    tl.store(DV + kv_ptrs, dv.to(DV.dtype.element_ty), mask=offs_n[:, None] < N)
+
+
+@triton.jit
+def _bwd_dq_kernel(
+    Q, K, V, DO, DQ, L, Delta, sm_scale,
+    stride_qb, stride_qh, stride_qm, stride_qd,
+    stride_kb, stride_kh, stride_kn, stride_kd,
+    N,
+    H: tl.constexpr, BLOCK_M: tl.constexpr, BLOCK_N: tl.constexpr,
+    BLOCK_D: tl.constexpr, CAUSAL: tl.constexpr,
+):
+    """One query block; accumulate dQ by looping over key/value blocks."""
+    start_m = tl.program_id(0)
+    off_bh = tl.program_id(1)
+    off_b, off_h = off_bh // H, off_bh % H
+    offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
+    offs_d = tl.arange(0, BLOCK_D)
+
+    q_base = off_b * stride_qb + off_h * stride_qh
+    k_base = off_b * stride_kb + off_h * stride_kh
+
+    qd_ptrs = q_base + offs_m[:, None] * stride_qm + offs_d[None, :] * stride_qd
+    q = tl.load(Q + qd_ptrs, mask=offs_m[:, None] < N, other=0.0)
+    do = tl.load(DO + qd_ptrs, mask=offs_m[:, None] < N, other=0.0)
+    l_i = tl.load(L + off_bh * N + offs_m, mask=offs_m < N, other=0.0)
+    delta = tl.load(Delta + off_bh * N + offs_m, mask=offs_m < N, other=0.0)
+
+    dq = tl.zeros([BLOCK_M, BLOCK_D], dtype=tl.float32)
+
+    hi = (start_m + 1) * BLOCK_M if CAUSAL else N
+    for start_n in range(0, hi, BLOCK_N):
+        offs_n = start_n + tl.arange(0, BLOCK_N)
+        kv_ptrs = k_base + offs_n[:, None] * stride_kn + offs_d[None, :] * stride_kd
+        k = tl.load(K + kv_ptrs, mask=offs_n[:, None] < N, other=0.0)
+        v = tl.load(V + kv_ptrs, mask=offs_n[:, None] < N, other=0.0)
+
+        qk = tl.dot(q, tl.trans(k)) * sm_scale
+        p = tl.exp(qk - l_i[:, None])
+        keep = (offs_m[:, None] < N) & (offs_n[None, :] < N)
+        if CAUSAL:
+            keep = keep & (offs_m[:, None] >= offs_n[None, :])
+        p = tl.where(keep, p, 0.0)
+
+        dp = tl.dot(do, tl.trans(v))
+        ds = p * (dp - delta[:, None])
+        dq += tl.dot(ds.to(k.dtype), k)                      # dS·K
+
+    dq *= sm_scale
+    tl.store(DQ + qd_ptrs, dq.to(DQ.dtype.element_ty), mask=offs_m[:, None] < N)
+
 
 class FlashAttnFunc(torch.autograd.Function):
-    """Autograd wrapper. Forward uses the Triton kernel; backward currently
-    defers to PyTorch autograd (recompute). The ``backward`` body is the clean
-    seam where a real fused backward kernel drops in later — nothing else needs
-    to change."""
+    """Autograd wrapper: fused Triton kernels for both forward and backward."""
 
     @staticmethod
     def forward(ctx, q, k, v, causal, sm_scale, block_m, block_n, num_warps, num_stages):
@@ -160,9 +297,10 @@ class FlashAttnFunc(torch.autograd.Function):
         assert block_m % block_n == 0, "two-phase causal loop needs BLOCK_M % BLOCK_N == 0"
 
         o = torch.empty_like(q)
+        lse = torch.empty((B, H, N), device=q.device, dtype=torch.float32)  # log-sum-exp
         grid = (triton.cdiv(N, block_m), B * H)
         _flash_fwd_kernel[grid](
-            q, k, v, o,
+            q, k, v, o, lse,
             sm_scale,
             *q.stride(), *k.stride(), *v.stride(), *o.stride(),
             N,
@@ -172,26 +310,38 @@ class FlashAttnFunc(torch.autograd.Function):
             num_warps=num_warps, num_stages=num_stages,
         )
 
-        ctx.save_for_backward(q, k, v)
+        ctx.save_for_backward(q, k, v, o, lse)
         ctx.causal = causal
         ctx.sm_scale = sm_scale
+        ctx.block_m, ctx.block_n = block_m, block_n
+        ctx.num_warps, ctx.num_stages = num_warps, num_stages
         return o
 
     @staticmethod
     def backward(ctx, do):
-        # Phase-2 fallback: recompute the forward under PyTorch autograd and let
-        # it produce dQ, dK, dV. Correct and self-contained; to be replaced by a
-        # fused Triton backward kernel without touching the public API.
-        import torch.nn.functional as F
+        q, k, v, o, lse = ctx.saved_tensors
+        do = do.contiguous()
+        B, H, N, D = q.shape
+        bm, bn, causal, scale = ctx.block_m, ctx.block_n, ctx.causal, ctx.sm_scale
 
-        q, k, v = ctx.saved_tensors
-        with torch.enable_grad():
-            qd = q.detach().requires_grad_(True)
-            kd = k.detach().requires_grad_(True)
-            vd = v.detach().requires_grad_(True)
-            o = F.scaled_dot_product_attention(qd, kd, vd, is_causal=ctx.causal, scale=ctx.sm_scale)
-            dq, dk, dv = torch.autograd.grad(o, (qd, kd, vd), do)
-        # grads line up with forward()'s args; non-tensor args get None.
+        dq = torch.empty_like(q)
+        dk = torch.empty_like(k)
+        dv = torch.empty_like(v)
+        delta = torch.empty((B, H, N), device=q.device, dtype=torch.float32)
+
+        _bwd_preprocess[(triton.cdiv(N, bm), B * H)](
+            o, do, delta, *o.stride(), N, H=H, BLOCK_M=bm, BLOCK_D=D,
+        )
+        _bwd_dkdv_kernel[(triton.cdiv(N, bn), B * H)](
+            q, k, v, do, dk, dv, lse, delta, scale,
+            *q.stride(), *k.stride(), N,
+            H=H, BLOCK_M=bm, BLOCK_N=bn, BLOCK_D=D, CAUSAL=causal,
+        )
+        _bwd_dq_kernel[(triton.cdiv(N, bm), B * H)](
+            q, k, v, do, dq, lse, delta, scale,
+            *q.stride(), *k.stride(), N,
+            H=H, BLOCK_M=bm, BLOCK_N=bn, BLOCK_D=D, CAUSAL=causal,
+        )
         return dq, dk, dv, None, None, None, None, None, None
 
 

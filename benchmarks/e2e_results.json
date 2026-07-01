@@ -8,16 +8,25 @@
     "dtype": "float16"
   },
   "latency_ms": {
-    "naive": 40.4552,
-    "sdpa": 21.7339,
-    "fused": 21.9305
+    "naive": 40.4654,
+    "sdpa": 21.8588,
+    "fused": 22.0488
   },
   "speedup_vs_naive": {
     "naive": 1.0,
-    "sdpa": 1.861,
-    "fused": 1.845
+    "sdpa": 1.851,
+    "fused": 1.835
+  },
+  "train_ms": {
+    "naive": 110.5265,
+    "sdpa": 67.221,
+    "fused": 68.7299
+  },
+  "train_speedup_vs_naive": {
+    "naive": 1.0,
+    "sdpa": 1.644,
+    "fused": 1.608
   },
   "fused_speedup_over_sdpa": 0.991,
-  "fused_vs_sdpa_max_abs": 0.0029,
-  "fused_vs_sdpa_max_rel": 2.2926
+  "fused_vs_sdpa_max_abs": 0.0029
 }

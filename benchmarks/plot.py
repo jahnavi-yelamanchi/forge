@@ -106,25 +106,38 @@ def plot_hbm_traffic(df: pd.DataFrame, out_dir: Path) -> None:
 
 
 def plot_e2e(json_path: str, out_dir: Path) -> None:
-    """Bar chart of full-model GPT-2 forward latency per attention backend."""
+    """Grouped bars: GPT-2 forward and training-step latency per backend."""
     import json
 
     data = json.loads(Path(json_path).read_text())
-    lat = data["latency_ms"]
-    sp = data["speedup_vs_naive"]
     order = ["naive", "sdpa", "fused"]
-    fig, ax = plt.subplots(figsize=(6, 4))
-    bars = ax.bar(
-        [LABELS[k] for k in order], [lat[k] for k in order],
-        color=[COLORS[k] for k in order],
-    )
-    for k, b in zip(order, bars):
+    fwd = data["latency_ms"]
+    fwd_sp = data["speedup_vs_naive"]
+    train = data.get("train_ms", {})
+    train_sp = data.get("train_speedup_vs_naive", {})
+    x = range(len(order))
+
+    fig, ax = plt.subplots(figsize=(6.5, 4))
+    fb = ax.bar([i - 0.2 for i in x], [fwd[k] for k in order], 0.4,
+                color=[COLORS[k] for k in order], label="Forward")
+    tb = ax.bar([i + 0.2 for i in x], [train.get(k) or 0 for k in order], 0.4,
+                color=[COLORS[k] for k in order], alpha=0.55, hatch="//", label="Train (fwd+bwd)")
+
+    for k, b in zip(order, fb):
         ax.text(b.get_x() + b.get_width() / 2, b.get_height(),
-                f"{lat[k]:.1f} ms\n{sp[k]:.2f}×", ha="center", va="bottom", fontsize=9)
+                f"{fwd[k]:.0f}\n{fwd_sp[k]:.2f}×", ha="center", va="bottom", fontsize=8)
+    for k, b in zip(order, tb):
+        if train.get(k):
+            ax.text(b.get_x() + b.get_width() / 2, b.get_height(),
+                    f"{train[k]:.0f}\n{train_sp[k]:.2f}×", ha="center", va="bottom", fontsize=8)
+
     cfg = data["config"]
-    ax.set(ylabel="Forward latency (ms)",
-           title=f"GPT-2 forward: {cfg['n_layer']}L, B={cfg['batch']}, T={cfg['seqlen']}, fp16")
-    ax.margins(y=0.15)
+    ax.set(ylabel="Latency (ms)",
+           title=f"GPT-2: {cfg['n_layer']}L, B={cfg['batch']}, T={cfg['seqlen']}, fp16")
+    ax.set_xticks(list(x))
+    ax.set_xticklabels([LABELS[k] for k in order])
+    ax.margins(y=0.18)
+    ax.legend()
     _save(fig, out_dir, "e2e_forward.png")
 
 

@@ -60,25 +60,27 @@ def test_matches_sdpa(shape, dtype, impl_name):
     )
 
 
-def test_fused_backward_wires_up():
-    """The autograd seam must produce finite dQ/dK/dV of the right shape.
-
-    Backward currently defers to PyTorch (Phase 2), so this guards the wiring,
-    not the math — a fused backward kernel will harden it later.
-    """
+@pytest.mark.parametrize("shape", [(2, 4, 256, 64), (1, 8, 512, 64), (2, 12, 1024, 64)])
+def test_fused_backward_matches_sdpa(shape):
+    """The fused backward kernels must produce dQ/dK/dV matching SDPA autograd."""
     if not torch.cuda.is_available():
         pytest.skip("CUDA required")
 
-    q, k, v = make_qkv(2, 4, 256, 64, dtype=torch.float16)
-    q, k, v = (t.clone().requires_grad_(True) for t in (q, k, v))
+    q, k, v = make_qkv(*shape, dtype=torch.float16)
+    grad = torch.randn_like(q)  # shared upstream gradient
 
-    out = flash_attention(q, k, v, causal=True)
-    out.sum().backward()
+    def grads_of(attn_fn):
+        qi, ki, vi = (t.clone().requires_grad_(True) for t in (q, k, v))
+        out = attn_fn(qi, ki, vi, causal=True)
+        out.backward(grad)
+        return qi.grad, ki.grad, vi.grad
 
-    for name, t in (("dQ", q.grad), ("dK", k.grad), ("dV", v.grad)):
-        assert t is not None, f"{name} is None"
-        assert t.shape == q.shape, f"{name} wrong shape"
-        assert torch.isfinite(t).all(), f"{name} has non-finite values"
+    ref = grads_of(sdpa_attention)
+    got = grads_of(flash_attention)
+
+    for name, g, r in zip(("dQ", "dK", "dV"), got, ref):
+        res = compare(g, r, atol=3e-2, rtol=3e-2)
+        assert res.passed, f"{name} {shape}: max_abs={res.max_abs_err:.4g} max_rel={res.max_rel_err:.4g}"
 
 
 def test_gpt2_fused_matches_sdpa():
