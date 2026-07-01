@@ -148,6 +148,31 @@ def profile():
         print(f"  N={n}: best {b} -> {b['speedup_vs_default']}x over untuned default")
 
 
+@app.function(gpu=GPU)
+def run_e2e(batch: int = 8, seqlen: int = 1024) -> dict:
+    """End-to-end GPT-2 forward across attention backends, on the A100."""
+    from benchmarks.run_e2e import run_e2e as _run
+
+    print("=== Forge end-to-end GPT-2 forward ===")
+    return _run(batch=batch, seqlen=seqlen)
+
+
+@app.local_entrypoint()
+def e2e(batch: int = 8, seqlen: int = 1024):
+    """`modal run modal_app.py::e2e` -> full-model forward speedup + logit check."""
+    import json
+    from pathlib import Path
+
+    res = run_e2e.remote(batch=batch, seqlen=seqlen)
+    path = Path("benchmarks/e2e_results.json")
+    path.write_text(json.dumps(res, indent=2))
+    print(json.dumps(res, indent=2))
+
+    from benchmarks.plot import plot_e2e
+
+    plot_e2e(str(path), Path("docs/assets"))
+
+
 @app.local_entrypoint()
 def bench(dtype: str = "float16"):
     """`modal run modal_app.py::bench` -> sweep on A100, write CSV + plots locally."""

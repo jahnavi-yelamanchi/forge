@@ -1,0 +1,23 @@
+{
+  "config": {
+    "n_layer": 12,
+    "n_head": 12,
+    "n_embd": 768,
+    "batch": 8,
+    "seqlen": 1024,
+    "dtype": "float16"
+  },
+  "latency_ms": {
+    "naive": 40.4552,
+    "sdpa": 21.7339,
+    "fused": 21.9305
+  },
+  "speedup_vs_naive": {
+    "naive": 1.0,
+    "sdpa": 1.861,
+    "fused": 1.845
+  },
+  "fused_speedup_over_sdpa": 0.991,
+  "fused_vs_sdpa_max_abs": 0.0029,
+  "fused_vs_sdpa_max_rel": 2.2926
+}

@@ -105,6 +105,29 @@ def plot_hbm_traffic(df: pd.DataFrame, out_dir: Path) -> None:
     _save(fig, out_dir, "hbm_traffic.png")
 
 
+def plot_e2e(json_path: str, out_dir: Path) -> None:
+    """Bar chart of full-model GPT-2 forward latency per attention backend."""
+    import json
+
+    data = json.loads(Path(json_path).read_text())
+    lat = data["latency_ms"]
+    sp = data["speedup_vs_naive"]
+    order = ["naive", "sdpa", "fused"]
+    fig, ax = plt.subplots(figsize=(6, 4))
+    bars = ax.bar(
+        [LABELS[k] for k in order], [lat[k] for k in order],
+        color=[COLORS[k] for k in order],
+    )
+    for k, b in zip(order, bars):
+        ax.text(b.get_x() + b.get_width() / 2, b.get_height(),
+                f"{lat[k]:.1f} ms\n{sp[k]:.2f}×", ha="center", va="bottom", fontsize=9)
+    cfg = data["config"]
+    ax.set(ylabel="Forward latency (ms)",
+           title=f"GPT-2 forward: {cfg['n_layer']}L, B={cfg['batch']}, T={cfg['seqlen']}, fp16")
+    ax.margins(y=0.15)
+    _save(fig, out_dir, "e2e_forward.png")
+
+
 def main(csv_path: str, out_dir: str) -> None:
     df = pd.read_csv(csv_path)
     out = Path(out_dir)

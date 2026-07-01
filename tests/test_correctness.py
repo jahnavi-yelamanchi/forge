@@ -79,3 +79,24 @@ def test_fused_backward_wires_up():
         assert t is not None, f"{name} is None"
         assert t.shape == q.shape, f"{name} wrong shape"
         assert torch.isfinite(t).all(), f"{name} has non-finite values"
+
+
+def test_gpt2_fused_matches_sdpa():
+    """Swapping the fused kernel into GPT-2 must not change the model's logits."""
+    if not torch.cuda.is_available():
+        pytest.skip("CUDA required")
+
+    from forge.gpt2 import GPT, GPT2Config
+
+    cfg = GPT2Config(n_layer=2, n_head=4, n_embd=256, block_size=256, vocab_size=1000)
+    model = GPT(cfg).cuda().half().eval()
+    idx = torch.randint(0, cfg.vocab_size, (2, 128), device="cuda")
+
+    with torch.no_grad():
+        model.set_attention_backend("sdpa")
+        ref = model(idx)
+        model.set_attention_backend("fused")
+        out = model(idx)
+
+    res = compare(out, ref, atol=3e-2, rtol=3e-2)
+    assert res.passed, f"GPT-2 logits diverge: max_abs={res.max_abs_err:.4g}"

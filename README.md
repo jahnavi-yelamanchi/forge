@@ -64,6 +64,12 @@ methodology + more plots in [`docs/benchmarks.md`](docs/benchmarks.md)).
 - Phase-4 tuning (pipeline depth + two-phase causal loop) narrows the gap to
   PyTorch SDPA from ~1.5× to **~1.3×**. See [`docs/profiling.md`](docs/profiling.md).
 
+**End-to-end**, dropped into a full GPT-2 (12L, B=8, T=1024, fp16), Forge gives a
+**1.85× forward-pass speedup** over the naive baseline — matching PyTorch SDPA to
+within 1%, with logits identical to 2.9e-3.
+
+![GPT-2 end-to-end forward](docs/assets/e2e_forward.png)
+
 ¹ SDPA is NVIDIA's production FlashAttention-2 (hand-tuned CUDA); it's the ceiling
 Forge chases.
 
@@ -74,7 +80,7 @@ Forge chases.
 - [x] Fused FlashAttention **forward** kernel in Triton — _17/17 tests vs SDPA (fp16+bf16, N≤2048)_
 - [x] Benchmark sweep + speedup/bandwidth results — _up to 18.9× vs naive, ~33× less HBM traffic_
 - [x] Profiling + tuning loop (pipeline depth + two-phase causal) — _gap to SDPA 1.5×→1.3×_
-- [ ] End-to-end GPT-2 integration
+- [x] End-to-end GPT-2 integration — _1.85× forward speedup, logits match SDPA to 2.9e-3_
 - [ ] _Future:_ fused **backward** kernel · MLP/GELU fusion
 
 ## License

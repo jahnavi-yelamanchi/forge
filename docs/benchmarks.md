@@ -70,3 +70,24 @@ Speedup vs naive is stable across batch sizes, confirming the win is structural
 |     8 |     9.81× | 13.41× |
 
 Raw data: [`benchmarks/results.csv`](../benchmarks/results.csv).
+
+## End-to-end GPT-2 forward
+
+The kernel numbers above isolate attention. This measures the whole model: one
+GPT-2 (12 layers, 12 heads, d=768, fp16) run with each attention backend swapped
+in — everything else identical. B=8, T=1024.
+
+![GPT-2 end-to-end forward](assets/e2e_forward.png)
+
+| Backend | Forward latency | Speedup vs naive |
+|---------|----------------:|-----------------:|
+| Naive (PyTorch) | 40.5 ms | 1.00× |
+| PyTorch SDPA | 21.7 ms | 1.86× |
+| **Forge (fused)** | **21.9 ms** | **1.85×** |
+
+Swapping Forge's fused kernel into GPT-2 delivers a **1.85× end-to-end forward
+speedup** over the naive baseline and **matches PyTorch SDPA to within 1%** — at
+the full-model level, attention shares the runtime with the MLP, LayerNorms, and
+projections, so the small kernel-level gap to SDPA washes out. The fused path's
+logits differ from SDPA by at most **2.9e-3** (max abs), confirming the swap is
+numerically safe. Reproduce with `modal run modal_app.py::e2e`.
